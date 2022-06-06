@@ -48,12 +48,87 @@
 #include <string.h>
 #include <stdint.h>
 #include <gmp.h>
+#include <pthread.h>
 
 // how many to display if the user doesn't specify:
 #define DEFAULT_DIGITS 60
 
 // how many decimal digits the algorithm generates per iteration:
 #define DIGITS_PER_ITERATION 14.1816474627254776555
+
+typedef struct {
+    mpz_t       a;
+    mpz_t       b
+    mpz_t       c;
+    mpz_t       d;
+    mpz_t       e;
+
+    uint32_t    iterations;
+}
+THREAD_PARMS;
+
+
+void * numeratorThread1(void * p)
+{
+	uint32_t        k;
+    THREAD_PARMS *  tp;
+
+    tp = (THREAD_PARMS *)p;
+
+	for (k = 0; k < tp->iterations; k++) {
+		mpz_fac_ui(tp->a, (6 * k));  // (6k)!
+
+		mpz_set_ui(b, 545140134); // 13591409 + 545140134k
+		mpz_mul_ui(b, b, k);
+		mpz_add_ui(b, b, 13591409);
+
+		mpz_mul(a, a, b);
+	}
+
+    return NULL;
+}
+
+void * denominatorThread1(void * p)
+{
+	uint32_t        k;
+    THREAD_PARMS *  tp;
+    uint32_t        threek;
+
+    tp = (THREAD_PARMS *)p;
+
+	for (k = 0; k < tp->iterations; k++) {
+		threek = (3 * k);
+
+		mpz_fac_ui(c, threek);  // (3k)!
+
+		mpz_ui_pow_ui(e, 640320, threek); // -640320^(3k)
+		
+        if ((threek & 1) == 1) { 
+            mpz_neg(e, e);
+        }
+
+		mpz_mul(c, c, e);
+	}
+
+    return NULL;
+}
+
+void * denominatorThread2(void * p)
+{
+	uint32_t        k;
+    THREAD_PARMS *  tp;
+
+    tp = (THREAD_PARMS *)p;
+
+	for (k = 0; k < tp->iterations; k++) {
+		mpz_fac_ui(d, k);  // (k!)^3
+		mpz_pow_ui(d, d, 3);
+
+		mpz_mul(c, c, d);
+	}
+
+    return NULL;
+}
 
 /**
  * Compute pi to the specified number of decimal digits using the
@@ -70,15 +145,18 @@
 char * chudnovsky(uint32_t digits)
 {
 	mpf_t           result, con, A, B, F, sum;
-	mpz_t           a, b, c, d, e;
+    THREAD_PARMS    threadParms;
 	char *          output;
 	mp_exp_t        exp;
 	double          bits_per_digit;
-
 	uint32_t        k;
     uint32_t        threek;
-	uint32_t        iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
 	uint32_t        precision_bits;
+    pthread_t       numThread1;
+    pthread_t       denThread1;
+    pthread_t       denThread2;
+
+    threadParms.iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
@@ -89,7 +167,7 @@ char * chudnovsky(uint32_t digits)
 
 	// allocate GMP variables
 	mpf_inits(result, con, A, B, F, sum, NULL);
-	mpz_inits(a, b, c, d, e, NULL);
+	mpz_inits(threadParms.a, threadParms.b, threadParms.c, threadParms.d, threadParms.e, NULL);
 
 	mpf_set_ui(sum, 0); // sum already zero at this point, so just FYI
 
@@ -97,11 +175,15 @@ char * chudnovsky(uint32_t digits)
 	mpf_sqrt_ui(con, 10005);
 	mpf_mul_ui(con, con, 426880);
 
+    pthread_create(numThread1, NULL, numeratorThread1, &threadParms);
+    pthread_create(denThread1, NULL, denominatorThread1, &threadParms);
+    pthread_create(denThread2, NULL, denominatorThread2, &threadParms);
+
 	// now the fun bit
 	for (k = 0; k < iterations; k++) {
-		threek = 3*k;
+		threek = (3 * k);
 
-		mpz_fac_ui(a, 6*k);  // (6k)!
+		mpz_fac_ui(a, (6 * k));  // (6k)!
 
 		mpz_set_ui(b, 545140134); // 13591409 + 545140134k
 		mpz_mul_ui(b, b, k);
