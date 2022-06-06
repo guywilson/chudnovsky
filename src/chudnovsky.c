@@ -46,6 +46,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <gmp.h>
 
 // how many to display if the user doesn't specify:
@@ -66,17 +67,18 @@
  *
  * @return a malloc'd string result (with no decimal marker)
  */
-char *chudnovsky(unsigned long digits)
+char * chudnovsky(uint32_t digits)
 {
-	mpf_t result, con, A, B, F, sum;
-	mpz_t a, b, c, d, e;
-	char *output;
-	mp_exp_t exp;
-	double bits_per_digit;
+	mpf_t           result, con, A, B, F, sum;
+	mpz_t           a, b, c, d, e;
+	char *          output;
+	mp_exp_t        exp;
+	double          bits_per_digit;
 
-	unsigned long int k, threek;
-	unsigned long iterations = (digits/DIGITS_PER_ITERATION)+1;
-	unsigned long precision_bits;
+	uint32_t        k;
+    uint32_t        threek;
+	uint32_t        iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
+	uint32_t        precision_bits;
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
@@ -111,7 +113,10 @@ char *chudnovsky(unsigned long digits)
 		mpz_pow_ui(d, d, 3);
 
 		mpz_ui_pow_ui(e, 640320, threek); // -640320^(3k)
-		if ((threek&1) == 1) { mpz_neg(e, e); }
+		
+        if ((threek & 1) == 1) { 
+            mpz_neg(e, e);
+        }
 
 		// numerator (in A)
 		mpz_mul(a, a, b);
@@ -159,8 +164,9 @@ void usage_exit(void)
  */
 int main(int argc, char **argv)
 {
-	char *pi, *endptr;
-	long digits;
+	char *      pi;
+    char *      endptr;
+	uint32_t    digits = 0;
 
 	switch (argc) {
 		case 1:
@@ -168,15 +174,20 @@ int main(int argc, char **argv)
 			break;
 
 		case 2:
-			digits = strtol(argv[1], &endptr, 10);
-			if (*endptr != '\0') { usage_exit(); }
+			digits = (uint32_t)strtoul(argv[1], &endptr, 10);
+			
+            if (*endptr != '\0') { 
+                usage_exit();
+            }
 			break;
 
 		default:
 			usage_exit();
 	}
 
-	if (digits < 1) { usage_exit(); }
+	if (digits < 1) { 
+        usage_exit();
+    }
 
 	pi = chudnovsky(digits);
 
