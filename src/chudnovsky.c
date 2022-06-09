@@ -63,12 +63,14 @@ typedef struct {
     mpz_t       d;
     mpz_t       e;
 
+    mpf_t *     A;
+    mpf_t *     B;
+
     uint32_t    iterations;
 }
 THREAD_PARMS;
 
-
-void * numeratorThread1(void * p)
+void * numeratorThread(void * p)
 {
 	uint32_t        k;
     THREAD_PARMS *  tp;
@@ -83,12 +85,13 @@ void * numeratorThread1(void * p)
 		mpz_add_ui(b, b, 13591409);
 
 		mpz_mul(a, a, b);
+		mpf_set_z(A, a);
 	}
 
     return NULL;
 }
 
-void * denominatorThread1(void * p)
+void * denominatorThread(void * p)
 {
 	uint32_t        k;
     THREAD_PARMS *  tp;
@@ -101,30 +104,18 @@ void * denominatorThread1(void * p)
 
 		mpz_fac_ui(c, threek);  // (3k)!
 
+		mpz_fac_ui(d, k);  // (k!)^3
+		mpz_pow_ui(d, d, 3);
+
 		mpz_ui_pow_ui(e, 640320, threek); // -640320^(3k)
 		
         if ((threek & 1) == 1) { 
             mpz_neg(e, e);
         }
 
-		mpz_mul(c, c, e);
-	}
-
-    return NULL;
-}
-
-void * denominatorThread2(void * p)
-{
-	uint32_t        k;
-    THREAD_PARMS *  tp;
-
-    tp = (THREAD_PARMS *)p;
-
-	for (k = 0; k < tp->iterations; k++) {
-		mpz_fac_ui(d, k);  // (k!)^3
-		mpz_pow_ui(d, d, 3);
-
 		mpz_mul(c, c, d);
+		mpz_mul(c, c, e);
+		mpf_set_z(B, c);
 	}
 
     return NULL;
@@ -152,11 +143,13 @@ char * chudnovsky(uint32_t digits)
 	uint32_t        k;
     uint32_t        threek;
 	uint32_t        precision_bits;
-    pthread_t       numThread1;
-    pthread_t       denThread1;
-    pthread_t       denThread2;
+    pthread_t       numeratorPID;
+    pthread_t       denominatorPID;
 
     threadParms.iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
+
+    threadParms.A = (mpf_t *)malloc(sizeof(mpf_t) * 1000);
+    threadParms.A = (mpf_t *)malloc(sizeof(mpf_t) * 1000);
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
@@ -175,9 +168,8 @@ char * chudnovsky(uint32_t digits)
 	mpf_sqrt_ui(con, 10005);
 	mpf_mul_ui(con, con, 426880);
 
-    pthread_create(numThread1, NULL, numeratorThread1, &threadParms);
-    pthread_create(denThread1, NULL, denominatorThread1, &threadParms);
-    pthread_create(denThread2, NULL, denominatorThread2, &threadParms);
+    pthread_create(numeratorPID, NULL, numeratorThread, &threadParms);
+    pthread_create(denominatorPID, NULL, denominatorThread, &threadParms);
 
 	// now the fun bit
 	for (k = 0; k < iterations; k++) {
