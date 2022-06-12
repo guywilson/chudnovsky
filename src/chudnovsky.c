@@ -49,6 +49,9 @@
 #include <stdint.h>
 #include <gmp.h>
 #include <pthread.h>
+#include <unistd.h>
+
+#include "queue.h"
 
 // how many to display if the user doesn't specify:
 #define DEFAULT_DIGITS 60
@@ -56,15 +59,11 @@
 // how many decimal digits the algorithm generates per iteration:
 #define DIGITS_PER_ITERATION 14.1816474627254776555
 
-typedef struct {
-    mpz_t       a;
-    mpz_t       b
-    mpz_t       c;
-    mpz_t       d;
-    mpz_t       e;
+#define MAX_QUEUE_FULL_RETRIES			10
 
-    mpf_t *     A;
-    mpf_t *     B;
+typedef struct {
+	HQUEUE		numeratorQueue;
+	HQUEUE		denominatorQueue;
 
     uint32_t    iterations;
 }
@@ -73,20 +72,65 @@ THREAD_PARMS;
 void * numeratorThread(void * p)
 {
 	uint32_t        k;
+	uint32_t		queueSize;
+	mpf_t *			resultArray;
+	mpz_t			a, b;
     THREAD_PARMS *  tp;
+	int				retryCount;
+	int				i;
 
     tp = (THREAD_PARMS *)p;
 
+	printf("Numerator thread started\n");
+
+	mpz_inits(a, b, NULL);
+
+	queueSize = q_getCapacity(tp->numeratorQueue);
+
+	resultArray = (mpf_t *)malloc(queueSize * sizeof(mpf_t));
+
+	for (i = 0; i < queueSize;i++) {
+		mpf_init(resultArray[i]);
+	}
+
+	i = 0;
+
 	for (k = 0; k < tp->iterations; k++) {
-		mpz_fac_ui(tp->a, (6 * k));  // (6k)!
+		mpz_fac_ui(a, (6 * k));  // (6k)!
 
 		mpz_set_ui(b, 545140134); // 13591409 + 545140134k
 		mpz_mul_ui(b, b, k);
 		mpz_add_ui(b, b, 13591409);
 
 		mpz_mul(a, a, b);
-		mpf_set_z(A, a);
+		mpf_set_z(resultArray[i], a);
+
+		retryCount = 0;
+
+		while (q_addItem(tp->numeratorQueue, resultArray[i]) && retryCount < MAX_QUEUE_FULL_RETRIES) {
+			// Queue is full, wait for a bit and try again...
+			usleep(10000L);
+			retryCount++;
+		}
+
+		if (retryCount >= MAX_QUEUE_FULL_RETRIES) {
+			/*
+			** Something bad has happened, give up
+			*/
+			fprintf(stderr, "FATAL ERROR: Max queue full retries reached on numeratorThread(), giving up\n");
+			break;
+		}
+
+		i++;
+
+		if (i == queueSize) {
+			i = 0;
+		}
+
+		usleep(50);
 	}
+
+	mpz_clears(a, b, NULL);
 
     return NULL;
 }
@@ -94,10 +138,29 @@ void * numeratorThread(void * p)
 void * denominatorThread(void * p)
 {
 	uint32_t        k;
+	uint32_t		queueSize;
+	mpz_t			c, d, e;
+	mpf_t *			resultArray;
     THREAD_PARMS *  tp;
     uint32_t        threek;
+	int				retryCount;
+	int				i;
 
     tp = (THREAD_PARMS *)p;
+
+	printf("Numerator thread started\n");
+
+	mpz_inits(c, d, e, NULL);
+
+	queueSize = q_getCapacity(tp->denominatorQueue);
+
+	resultArray = (mpf_t *)malloc(queueSize * sizeof(mpf_t));
+
+	for (i = 0; i < queueSize;i++) {
+		mpf_init(resultArray[i]);
+	}
+
+	i = 0;
 
 	for (k = 0; k < tp->iterations; k++) {
 		threek = (3 * k);
@@ -115,8 +178,34 @@ void * denominatorThread(void * p)
 
 		mpz_mul(c, c, d);
 		mpz_mul(c, c, e);
-		mpf_set_z(B, c);
+		mpf_set_z(resultArray[i], c);
+
+		retryCount = 0;
+
+		while (q_addItem(tp->denominatorQueue, resultArray[i]) && retryCount < MAX_QUEUE_FULL_RETRIES) {
+			// Queue is full, wait for a bit and try again...
+			usleep(10000L);
+			retryCount++;
+		}
+
+		if (retryCount >= MAX_QUEUE_FULL_RETRIES) {
+			/*
+			** Something bad has happened, give up
+			*/
+			fprintf(stderr, "FATAL ERROR: Max queue full retries reached on denominatorThread(), giving up\n");
+			break;
+		}
+
+		i++;
+
+		if (i == queueSize) {
+			i = 0;
+		}
+
+		usleep(50);
 	}
+
+	mpz_clears(c, d, e, NULL);
 
     return NULL;
 }
@@ -135,21 +224,27 @@ void * denominatorThread(void * p)
  */
 char * chudnovsky(uint32_t digits)
 {
-	mpf_t           result, con, A, B, F, sum;
+	mpf_t           result, con, F, sum;
+	mpf_t *			pNumeratorResult;
+	mpf_t *			pDenominatorResult;
     THREAD_PARMS    threadParms;
 	char *          output;
 	mp_exp_t        exp;
 	double          bits_per_digit;
 	uint32_t        k;
-    uint32_t        threek;
+	uint32_t		iterations;
 	uint32_t        precision_bits;
     pthread_t       numeratorPID;
     pthread_t       denominatorPID;
+	int				retryCount = 0;
 
-    threadParms.iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
+    iterations = (uint32_t)(((double)digits / (double)DIGITS_PER_ITERATION) + (double)1.0);
+	threadParms.iterations = iterations;
 
-    threadParms.A = (mpf_t *)malloc(sizeof(mpf_t) * 1000);
-    threadParms.A = (mpf_t *)malloc(sizeof(mpf_t) * 1000);
+	printf("Number of iterations: %u\n", iterations);
+
+	threadParms.numeratorQueue = q_create(4096);
+	threadParms.denominatorQueue = q_create(4096);
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
@@ -159,8 +254,7 @@ char * chudnovsky(uint32_t digits)
 	mpf_set_default_prec(precision_bits);
 
 	// allocate GMP variables
-	mpf_inits(result, con, A, B, F, sum, NULL);
-	mpz_inits(threadParms.a, threadParms.b, threadParms.c, threadParms.d, threadParms.e, NULL);
+	mpf_inits(result, con, F, sum, NULL);
 
 	mpf_set_ui(sum, 0); // sum already zero at this point, so just FYI
 
@@ -168,45 +262,79 @@ char * chudnovsky(uint32_t digits)
 	mpf_sqrt_ui(con, 10005);
 	mpf_mul_ui(con, con, 426880);
 
-    pthread_create(numeratorPID, NULL, numeratorThread, &threadParms);
-    pthread_create(denominatorPID, NULL, denominatorThread, &threadParms);
+    pthread_create(&numeratorPID, NULL, numeratorThread, &threadParms);
+    pthread_create(&denominatorPID, NULL, denominatorThread, &threadParms);
+
+	// Sleep for 1 seconds to give the threads a chance to catch up...
+	sleep(2L);
 
 	// now the fun bit
 	for (k = 0; k < iterations; k++) {
-		threek = (3 * k);
+		printf(
+			"Numerator Q size: %u, Denominator Q size: %u\n", 
+			q_getCurrentSize(threadParms.numeratorQueue), 
+			q_getCurrentSize(threadParms.denominatorQueue));
 
-		mpz_fac_ui(a, (6 * k));  // (6k)!
-
-		mpz_set_ui(b, 545140134); // 13591409 + 545140134k
-		mpz_mul_ui(b, b, k);
-		mpz_add_ui(b, b, 13591409);
-
-		mpz_fac_ui(c, threek);  // (3k)!
-
-		mpz_fac_ui(d, k);  // (k!)^3
-		mpz_pow_ui(d, d, 3);
-
-		mpz_ui_pow_ui(e, 640320, threek); // -640320^(3k)
-		
-        if ((threek & 1) == 1) { 
-            mpz_neg(e, e);
-        }
+		retryCount = 0;
 
 		// numerator (in A)
-		mpz_mul(a, a, b);
-		mpf_set_z(A, a);
+		pNumeratorResult = (mpf_t *)q_takeItem(threadParms.numeratorQueue);
+
+		printf("Got numerator item k=%u\n", k);
+
+		while (pNumeratorResult == NULL && retryCount < 10) {
+			fprintf(stderr, "Error: numerator queue is empty, wait for a bit...\n");
+			usleep(500L);
+			
+			pNumeratorResult = (mpf_t *)q_takeItem(threadParms.numeratorQueue);
+
+			retryCount++;
+		}
+
+		if (retryCount >= 10) {
+			fprintf(stderr, "FATAL ERROR: queue take item retry limit reached\n");
+			exit(-1);
+		}
+
+		retryCount = 0;
 
 		// denominator (in B)
-		mpz_mul(c, c, d);
-		mpz_mul(c, c, e);
-		mpf_set_z(B, c);
+		pDenominatorResult = (mpf_t *)q_takeItem(threadParms.denominatorQueue);
+
+		printf("Got denominator item k=%u\n", k);
+
+		while (pDenominatorResult == NULL && retryCount < 10) {
+			fprintf(stderr, "Error: denominator queue is empty, wait for a bit...\n");
+			usleep(500L);
+			
+			pDenominatorResult = (mpf_t *)q_takeItem(threadParms.denominatorQueue);
+
+			retryCount++;
+		}
+
+		if (retryCount >= 10) {
+			fprintf(stderr, "FATAL ERROR: queue take item retry limit reached\n");
+			exit(-1);
+		}
+
+		gmp_printf("Numerator = %F\n", *pNumeratorResult);
+		gmp_printf("Denominator = %F\n", *pDenominatorResult);
 
 		// result
-		mpf_div(F, A, B);
+		mpf_div(F, *pNumeratorResult, *pDenominatorResult);
 
 		// add on to sum
 		mpf_add(sum, sum, F);
+
+		gmp_printf("Sum = %Ff\n", sum);
 	}
+
+	printf("Loop finished...\n");
+
+	q_destroy(threadParms.numeratorQueue);
+	q_destroy(threadParms.denominatorQueue);
+
+	printf("Calculate pi...\n");
 
 	// final calculations (solve for pi)
 	mpf_ui_div(sum, 1, sum); // invert result
@@ -216,8 +344,7 @@ char * chudnovsky(uint32_t digits)
 	output = mpf_get_str(NULL, &exp, 10, digits, sum); // calls malloc()
 
 	// free GMP variables
-	mpf_clears(result, con, A, B, F, sum, NULL);
-	mpz_clears(a, b, c, d, e, NULL);
+	mpf_clears(result, con, *pNumeratorResult, *pDenominatorResult, F, sum, NULL);
 
 	return output;
 }

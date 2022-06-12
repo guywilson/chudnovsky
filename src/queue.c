@@ -1,32 +1,40 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define QUEUE_MAX_SIZE                                      32768
+#include "queue.h"
 
-typedef struct _queue {
+
+typedef struct {
     void *      data;
 
-    uint32_t    size;
+    uint32_t    id;
+}
+QUEUE_ITEM;
 
-    uint32_t    top;
-    uint32_t    bottom;
+struct _queue {
+    QUEUE_ITEM *    items;
 
-    uint32_t    pointer;
+    uint32_t        capacity;
+    uint32_t        currentSize;
+
+    uint32_t        front;
+    uint32_t        back;
+
+    uint32_t        nextId;
 };
 
-typedef struct _queue * HQUEUE;
-
-HQUEUE q_create(uint32_t numItems)
+HQUEUE q_create(uint32_t capacity)
 {
     HQUEUE      queue;
 
-    if (numItems > QUEUE_MAX_SIZE) {
+    if (capacity > QUEUE_MAX_SIZE) {
         fprintf(
             stderr, 
             "FATAL ERROR: Maximum queue size is %u, requested size %u\n", 
             QUEUE_MAX_SIZE, 
-            numItems);
+            capacity);
         exit(-1);
     }
 
@@ -39,26 +47,97 @@ HQUEUE q_create(uint32_t numItems)
         exit(-1);
     }
 
-    queue->data = (void *)malloc(numItems * sizeof(void *));
+    queue->items = (QUEUE_ITEM *)malloc(capacity * sizeof(QUEUE_ITEM));
 
-    if (queue->data == NULL) {
+    if (queue->items == NULL) {
         fprintf(
             stderr, 
             "FATAL ERROR: Failed to allocate memory for queue data\n");
         exit(-1);
     }
 
-    queue->size = numItems;
-    queue->bottom = 0;
-    queue->top = 0;
-    queue->pointer = 0;
+    memset(queue->items, 0, (capacity * sizeof(QUEUE_ITEM)));
+
+    queue->capacity = capacity;
+    queue->currentSize = 0;
+    queue->front = 0;
+    queue->back = 0;
+
+    queue->nextId = 0x00000001;
 
     return queue;
 }
 
 void q_destroy(HQUEUE q)
 {
-    free(q->data);
+    free(q->items);
     free(q);
 }
 
+uint32_t q_getCapacity(HQUEUE q)
+{
+    return q->capacity;
+}
+
+uint32_t q_getCurrentSize(HQUEUE q)
+{
+    return q->currentSize;
+}
+
+int q_addItem(HQUEUE q, void * item)
+{
+    /*
+    ** Add the item to the back of the queue...
+    */
+    q->items[q->back].data = item;
+    q->items[q->back].id = q->nextId++;
+
+    q->currentSize++;
+
+    if (q->currentSize == QUEUE_MAX_SIZE) {
+        return QERR_QUEUE_FULL;
+    }
+
+    q->back++;
+
+    if (q->back == QUEUE_MAX_SIZE) {
+        q->back = 0;
+    }
+
+    return QERR_OK;
+}
+
+void * q_takeItem(HQUEUE q)
+{
+    QUEUE_ITEM          qItem;
+    void *              item;
+
+    /*
+    ** Check if the queue is empty...
+    */
+    if (q->front == q->back) {
+        return NULL;
+    }
+
+    qItem = q->items[q->front++];
+
+    if (qItem.data == NULL) {
+        fprintf(
+            stderr, 
+            "FATAL ERROR: Item with ID %d in queue is NULL. f: %d, b: %d, s: %d", 
+            qItem.id, 
+            q->front, 
+            q->back, 
+            q->currentSize);
+
+        return NULL;
+    }
+
+    q->currentSize--;
+
+    if (q->front == QUEUE_MAX_SIZE) {
+        q->front = 0;
+    }
+
+    return item;
+}
