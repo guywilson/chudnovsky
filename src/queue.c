@@ -25,6 +25,32 @@ struct _queue {
     uint32_t        nextId;
 };
 
+void q_dump(HQUEUE q)
+{
+    uint32_t        i;
+    uint32_t        f;
+
+    f = q->front;
+
+    printf("q capacity: %u\n", q->capacity);
+    printf("q currentSise: %u\n", q->currentSize);
+    printf("q front: %u\n", q->front);
+    printf("q back: %u\n", q->back);
+    printf("q nextId: %u\n", q->nextId);
+
+    for (i = 0;i < q->capacity;i++) {
+        QUEUE_ITEM item = q->items[f++];
+
+        if (f == q->currentSize) {
+            break;
+        }
+        if (f == q->back) {
+            break;
+        }
+
+        printf("Item id: %u\n", item.id);
+    }
+}
 HQUEUE q_create(uint32_t capacity)
 {
     HQUEUE      queue;
@@ -133,9 +159,11 @@ void * q_takeItem(HQUEUE q)
         return NULL;
     }
 
+    item = qItem.data;
+
     q->currentSize--;
 
-    if (q->front == QUEUE_MAX_SIZE) {
+    if (q->front == q->capacity) {
         q->front = 0;
     }
 

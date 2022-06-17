@@ -148,7 +148,7 @@ void * denominatorThread(void * p)
 
     tp = (THREAD_PARMS *)p;
 
-	printf("Numerator thread started\n");
+	printf("Denominator thread started\n");
 
 	mpz_inits(c, d, e, NULL);
 
@@ -225,8 +225,8 @@ void * denominatorThread(void * p)
 char * chudnovsky(uint32_t digits)
 {
 	mpf_t           result, con, F, sum;
-	mpf_t *			pNumeratorResult;
-	mpf_t *			pDenominatorResult;
+	mpf_t *			pNumeratorResult = NULL;
+	mpf_t *			pDenominatorResult = NULL;
     THREAD_PARMS    threadParms;
 	char *          output;
 	mp_exp_t        exp;
@@ -270,17 +270,10 @@ char * chudnovsky(uint32_t digits)
 
 	// now the fun bit
 	for (k = 0; k < iterations; k++) {
-		printf(
-			"Numerator Q size: %u, Denominator Q size: %u\n", 
-			q_getCurrentSize(threadParms.numeratorQueue), 
-			q_getCurrentSize(threadParms.denominatorQueue));
-
 		retryCount = 0;
 
 		// numerator (in A)
 		pNumeratorResult = (mpf_t *)q_takeItem(threadParms.numeratorQueue);
-
-		printf("Got numerator item k=%u\n", k);
 
 		while (pNumeratorResult == NULL && retryCount < 10) {
 			fprintf(stderr, "Error: numerator queue is empty, wait for a bit...\n");
@@ -301,8 +294,6 @@ char * chudnovsky(uint32_t digits)
 		// denominator (in B)
 		pDenominatorResult = (mpf_t *)q_takeItem(threadParms.denominatorQueue);
 
-		printf("Got denominator item k=%u\n", k);
-
 		while (pDenominatorResult == NULL && retryCount < 10) {
 			fprintf(stderr, "Error: denominator queue is empty, wait for a bit...\n");
 			usleep(500L);
@@ -317,19 +308,12 @@ char * chudnovsky(uint32_t digits)
 			exit(-1);
 		}
 
-		gmp_printf("Numerator = %F\n", *pNumeratorResult);
-		gmp_printf("Denominator = %F\n", *pDenominatorResult);
-
 		// result
 		mpf_div(F, *pNumeratorResult, *pDenominatorResult);
 
 		// add on to sum
 		mpf_add(sum, sum, F);
-
-		gmp_printf("Sum = %Ff\n", sum);
 	}
-
-	printf("Loop finished...\n");
 
 	q_destroy(threadParms.numeratorQueue);
 	q_destroy(threadParms.denominatorQueue);

@@ -11,11 +11,12 @@
 struct _queue;
 typedef struct _queue * HQUEUE;
 
-HQUEUE q_create(uint32_t capacity);
-void q_destroy(HQUEUE q);
-uint32_t q_getCapacity(HQUEUE q);
-uint32_t q_getCurrentSize(HQUEUE q);
-int q_addItem(HQUEUE q, void * item);
-void * q_takeItem(HQUEUE q);
+HQUEUE      q_create(uint32_t capacity);
+void        q_destroy(HQUEUE q);
+void        q_dump(HQUEUE q);
+uint32_t    q_getCapacity(HQUEUE q);
+uint32_t    q_getCurrentSize(HQUEUE q);
+int         q_addItem(HQUEUE q, void * item);
+void *      q_takeItem(HQUEUE q);
 
 #endif
