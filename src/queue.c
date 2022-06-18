@@ -156,9 +156,20 @@ uint32_t q_getCapacity(HQUEUE q)
 
 uint32_t q_getCurrentSize(HQUEUE q)
 {
-    uint32_t currentSize;
+    uint32_t    currentSize;
+    int         semRtn;
 
-    sem_wait(q->mutexSemaphore);
+    semRtn = sem_timedwait(q->mutexSemaphore, _getSemaphoreTimeOut(q));
+
+    if (semRtn < 0 && errno == ETIMEDOUT) {
+        fprintf(stderr, "FATAL ERROR: Timed out waiting for sempahore lock in function q_getCurrentSize()\n");
+        exit(-1);
+    }
+    else if (semRtn < 0) {
+        fprintf(stderr, "FATAL ERROR: Error waiting for semephore lock in function q_getCurrentSize(): %s\n", strerror(errno));
+        exit(-1);
+    }
+
     currentSize = q->currentSize;
     sem_post(q->mutexSemaphore);
 
@@ -167,7 +178,18 @@ uint32_t q_getCurrentSize(HQUEUE q)
 
 int q_addItem(HQUEUE q, void * item)
 {
-    sem_wait(q->mutexSemaphore);
+    int         semRtn;
+
+    semRtn = sem_timedwait(q->mutexSemaphore, _getSemaphoreTimeOut(q));
+
+    if (semRtn < 0 && errno == ETIMEDOUT) {
+        fprintf(stderr, "FATAL ERROR: Timed out waiting for sempahore lock in function q_addItem()\n");
+        exit(-1);
+    }
+    else if (semRtn < 0) {
+        fprintf(stderr, "FATAL ERROR: Error waiting for semephore lock in function q_addItem(): %s\n", strerror(errno));
+        exit(-1);
+    }
 
     /*
     ** Add the item to the back of the queue...
@@ -194,10 +216,20 @@ int q_addItem(HQUEUE q, void * item)
 
 void * q_takeItem(HQUEUE q)
 {
-    QUEUE_ITEM          qItem;
-    void *              item;
+    QUEUE_ITEM  qItem;
+    void *      item;
+    int         semRtn;
 
-    sem_wait(q->mutexSemaphore);
+    semRtn = sem_timedwait(q->mutexSemaphore, _getSemaphoreTimeOut(q));
+
+    if (semRtn < 0 && errno == ETIMEDOUT) {
+        fprintf(stderr, "FATAL ERROR: Timed out waiting for sempahore lock in function q_takeItem()\n");
+        exit(-1);
+    }
+    else if (semRtn < 0) {
+        fprintf(stderr, "FATAL ERROR: Error waiting for semephore lock in function q_takeItem(): %s\n", strerror(errno));
+        exit(-1);
+    }
 
     /*
     ** Check if the queue is empty...
