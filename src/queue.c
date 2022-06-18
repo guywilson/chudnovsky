@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <semaphore.h>
 
 #include "queue.h"
 
@@ -15,6 +17,8 @@ QUEUE_ITEM;
 
 struct _queue {
     QUEUE_ITEM *    items;
+
+    sem_t *         mutexSemaphore;
 
     uint32_t        capacity;
     uint32_t        currentSize;
@@ -51,6 +55,7 @@ void q_dump(HQUEUE q)
         printf("Item id: %u\n", item.id);
     }
 }
+
 HQUEUE q_create(uint32_t capacity)
 {
     HQUEUE      queue;
@@ -84,6 +89,13 @@ HQUEUE q_create(uint32_t capacity)
 
     memset(queue->items, 0, (capacity * sizeof(QUEUE_ITEM)));
 
+    queue->mutexSemaphore = (sem_t *)malloc(sizeof(sem_t));
+
+    if (sem_init(queue->mutexSemaphore, 0, 1)) {
+        fprintf(stderr, "Failed to initialise mutex sempahore: %s\n", strerror(errno));
+        exit(-1);
+    }
+
     queue->capacity = capacity;
     queue->currentSize = 0;
     queue->front = 0;
@@ -96,22 +108,39 @@ HQUEUE q_create(uint32_t capacity)
 
 void q_destroy(HQUEUE q)
 {
+    sem_destroy(q->mutexSemaphore);
+
+    free(q->mutexSemaphore);
     free(q->items);
     free(q);
 }
 
 uint32_t q_getCapacity(HQUEUE q)
 {
-    return q->capacity;
+    uint32_t capacity;
+
+    sem_wait(q->mutexSemaphore);
+    capacity = q->capacity;
+    sem_post(q->mutexSemaphore);
+
+    return capacity;
 }
 
 uint32_t q_getCurrentSize(HQUEUE q)
 {
-    return q->currentSize;
+    uint32_t currentSize;
+
+    sem_wait(q->mutexSemaphore);
+    currentSize = q->currentSize;
+    sem_post(q->mutexSemaphore);
+
+    return currentSize;
 }
 
 int q_addItem(HQUEUE q, void * item)
 {
+    sem_wait(q->mutexSemaphore);
+
     /*
     ** Add the item to the back of the queue...
     */
@@ -126,9 +155,11 @@ int q_addItem(HQUEUE q, void * item)
 
     q->back++;
 
-    if (q->back == QUEUE_MAX_SIZE) {
+    if (q->back == q->capacity) {
         q->back = 0;
     }
+
+    sem_post(q->mutexSemaphore);
 
     return QERR_OK;
 }
@@ -137,6 +168,8 @@ void * q_takeItem(HQUEUE q)
 {
     QUEUE_ITEM          qItem;
     void *              item;
+
+    sem_wait(q->mutexSemaphore);
 
     /*
     ** Check if the queue is empty...
@@ -166,6 +199,8 @@ void * q_takeItem(HQUEUE q)
     if (q->front == q->capacity) {
         q->front = 0;
     }
+
+    sem_post(q->mutexSemaphore);
 
     return item;
 }
