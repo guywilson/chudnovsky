@@ -4,9 +4,13 @@
 #include <string.h>
 #include <errno.h>
 #include <semaphore.h>
+#include <time.h>
 
 #include "queue.h"
 
+#define QUEUE_SEMAPHORE_TIMEOUT_SECS                        5
+
+typedef struct timespec TIME_TIMEOUT;
 
 typedef struct {
     void *      data;
@@ -19,6 +23,7 @@ struct _queue {
     QUEUE_ITEM *    items;
 
     sem_t *         mutexSemaphore;
+    TIME_TIMEOUT *  tm;
 
     uint32_t        capacity;
     uint32_t        currentSize;
@@ -28,6 +33,15 @@ struct _queue {
 
     uint32_t        nextId;
 };
+
+inline TIME_TIMEOUT * _getSemaphoreTimeOut(HQUEUE q)
+{
+    clock_gettime(CLOCK_REALTIME, q->tm);
+
+    q->tm->tv_sec += QUEUE_SEMAPHORE_TIMEOUT_SECS;
+
+    return q->tm;
+}
 
 void q_dump(HQUEUE q)
 {
@@ -91,6 +105,8 @@ HQUEUE q_create(uint32_t capacity)
 
     queue->mutexSemaphore = (sem_t *)malloc(sizeof(sem_t));
 
+    queue->tm = (TIME_TIMEOUT *)malloc(sizeof(TIME_TIMEOUT));
+
     if (sem_init(queue->mutexSemaphore, 0, 1)) {
         fprintf(stderr, "Failed to initialise mutex sempahore: %s\n", strerror(errno));
         exit(-1);
@@ -111,15 +127,27 @@ void q_destroy(HQUEUE q)
     sem_destroy(q->mutexSemaphore);
 
     free(q->mutexSemaphore);
+    free(q->tm);
     free(q->items);
     free(q);
 }
 
 uint32_t q_getCapacity(HQUEUE q)
 {
-    uint32_t capacity;
+    uint32_t    capacity;
+    int         semRtn;
 
-    sem_wait(q->mutexSemaphore);
+    semRtn = sem_timedwait(q->mutexSemaphore, _getSemaphoreTimeOut(q));
+
+    if (semRtn < 0 && errno == ETIMEDOUT) {
+        fprintf(stderr, "FATAL ERROR: Timed out waiting for sempahore lock in function q_getCapacity()\n");
+        exit(-1);
+    }
+    else if (semRtn < 0) {
+        fprintf(stderr, "FATAL ERROR: Error waiting for semephore lock in function q_getCapacity(): %s\n", strerror(errno));
+        exit(-1);
+    }
+
     capacity = q->capacity;
     sem_post(q->mutexSemaphore);
 
