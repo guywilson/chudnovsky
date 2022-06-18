@@ -243,8 +243,8 @@ char * chudnovsky(uint32_t digits)
 
 	printf("Number of iterations: %u\n", iterations);
 
-	threadParms.numeratorQueue = q_create(65536);
-	threadParms.denominatorQueue = q_create(65536);
+	threadParms.numeratorQueue = q_create(2048);
+	threadParms.denominatorQueue = q_create(2048);
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
