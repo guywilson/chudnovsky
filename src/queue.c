@@ -200,6 +200,7 @@ int q_addItem(HQUEUE q, void * item)
     q->currentSize++;
 
     if (q->currentSize == QUEUE_MAX_SIZE) {
+        sem_post(q->mutexSemaphore);
         return QERR_QUEUE_FULL;
     }
 
@@ -235,6 +236,7 @@ void * q_takeItem(HQUEUE q)
     ** Check if the queue is empty...
     */
     if (q->front == q->back) {
+        sem_post(q->mutexSemaphore);
         return NULL;
     }
 
@@ -248,6 +250,8 @@ void * q_takeItem(HQUEUE q)
             q->front, 
             q->back, 
             q->currentSize);
+
+        sem_post(q->mutexSemaphore);
 
         return NULL;
     }
