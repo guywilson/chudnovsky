@@ -28,10 +28,9 @@ DEPFLAGS = -MT $@ -MMD -MP -MF $(DEP)/$*.Td
 
 # Libraries
 STDLIBS = -lgmp
-EXTLIBS = -lgmp
 
-COMPILE.c = $(C) $(CFLAGS) $(DEPFLAGS) -o $@
-LINK.o = $(LINKER) -o $@
+COMPILE.c = $(C) $(CFLAGS) -I/usr/local/MacGPG2/include $(DEPFLAGS) -o $@
+LINK.o = $(LINKER) -L/usr/local/MacGPG2/lib $(STDLIBS) -o $@
 
 CSRCFILES = $(wildcard $(SOURCE)/*.c)
 OBJFILES = $(patsubst $(SOURCE)/%.c, $(BUILD)/%.o, $(CSRCFILES))
