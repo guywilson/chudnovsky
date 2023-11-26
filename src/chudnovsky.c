@@ -50,66 +50,46 @@
 #include <gmp.h>
 #include <pthread.h>
 
-#define NUM_CORES                4
+#define NUM_CORES                       4UL
+#define THREAD_ITERATION_THESHOLD       1000
 
 // how many to display if the user doesn't specify:
-#define DEFAULT_DIGITS          60
+#define DEFAULT_DIGITS                  60
 
 // how many decimal digits the algorithm generates per iteration:
-#define DIGITS_PER_ITERATION    14.1816474627254776555
+#define DIGITS_PER_ITERATION            14.1816474627254776555
 
-/**
- * Compute pi to the specified number of decimal digits using the
- * Chudnovsky Algorithm.
- *
- * http://en.wikipedia.org/wiki/Pi#Rapidly_convergent_series
- *
- * NOTE: this function returns a malloc()'d string!
- *
- * @param digits number of decimal digits to compute
- *
- * @return a malloc'd string result (with no decimal marker)
- */
-char * chudnovsky(uint64_t digits) {
-	mpf_t       result;
-    mpf_t       con;
-    mpf_t       A;
-    mpf_t       B;
-    mpf_t       F;
-    mpf_t       sum;
-	mpz_t       a;
-    mpz_t       b;
-    mpz_t       c;
-    mpz_t       d;
-    mpz_t       e;
-	mp_exp_t    exp;
-	uint64_t    k;
-    uint64_t    threek;
-    uint64_t    sixk;
-	uint64_t    iterations = (digits / (uint64_t)DIGITS_PER_ITERATION) + 1UL;
-	uint64_t    precision_bits;
-	char *      output;
-	double      bits_per_digit;
+typedef struct {
+    uint64_t        startk;
+    uint64_t        endk;
 
-	// roughly compute how many bits of precision we need for
-	// this many digit:
-	bits_per_digit = 3.32192809488736234789; // log2(10)
-	precision_bits = (digits * bits_per_digit) + 1UL;
+    mpf_t           result;
+}
+thread_parms_t;
 
-	mpf_set_default_prec(precision_bits);
+void * chudnovsky_thread(void * p) {
+    mpf_t               A;
+    mpf_t               B;
+    mpf_t               F;
+	mpz_t               a;
+    mpz_t               b;
+    mpz_t               c;
+    mpz_t               d;
+    mpz_t               e;
+    uint64_t            k;
+    uint64_t            threek;
+    uint64_t            sixk;
+    thread_parms_t *    parms;
+    
+    parms = (thread_parms_t *)p;
 
 	// allocate GMP variables
-	mpf_inits(result, con, A, B, F, sum, NULL);
+	mpf_inits(A, B, F, NULL);
 	mpz_inits(a, b, c, d, e, NULL);
 
-	mpf_set_ui(sum, 0); // sum already zero at this point, so just FYI
+    printf("Starting thread, startk = %llu, endk = %llu\n", parms->startk, parms->endk);
 
-	// first the constant sqrt part
-	mpf_sqrt_ui(con, 10005);
-	mpf_mul_ui(con, con, 426880);
-
-	// now the fun bit
-	for (k = 0; k < iterations; k++) {
+	for (k = parms->startk; k < parms->endk; k++) {
 		threek = 3 * k;
         sixk = threek << 1;
 
@@ -143,8 +123,89 @@ char * chudnovsky(uint64_t digits) {
 		mpf_div(F, A, B);
 
 		// add on to sum
-		mpf_add(sum, sum, F);
+		mpf_add(parms->result, parms->result, F);
 	}
+
+	// free GMP variables
+	mpf_clears(A, B, F, NULL);
+	mpz_clears(a, b, c, d, e, NULL);
+
+    pthread_exit(NULL);
+}
+
+/**
+ * Compute pi to the specified number of decimal digits using the
+ * Chudnovsky Algorithm.
+ *
+ * http://en.wikipedia.org/wiki/Pi#Rapidly_convergent_series
+ *
+ * NOTE: this function returns a malloc()'d string!
+ *
+ * @param digits number of decimal digits to compute
+ *
+ * @return a malloc'd string result (with no decimal marker)
+ */
+char * chudnovsky(uint64_t digits) {
+    int                 i;
+    int                 numThreads = NUM_CORES;
+    pthread_t           tids[NUM_CORES];
+    mpf_t               con;
+    mpf_t               sum;
+	mp_exp_t            exp;
+	uint64_t            iterations = (digits / (uint64_t)DIGITS_PER_ITERATION) + 1UL;
+	uint64_t            precision_bits;
+	char *              output;
+	double              bits_per_digit;
+    thread_parms_t *    thread_parms;
+
+    printf("Num iterations = %llu\n", iterations);
+
+    if (iterations < THREAD_ITERATION_THESHOLD) {
+        numThreads = 1;
+    }
+
+    thread_parms = (thread_parms_t *)malloc(sizeof(thread_parms_t) * numThreads);
+
+    if (thread_parms == NULL) {
+        fprintf(stderr, "Failed to allocate memory for thread paramaters\n");
+        exit(-1);
+    }
+
+	// roughly compute how many bits of precision we need for
+	// this many digit:
+	bits_per_digit = 3.32192809488736234789; // log2(10)
+	precision_bits = (digits * bits_per_digit) + 1UL;
+
+	mpf_set_default_prec(precision_bits);
+
+	// allocate GMP variables
+	mpf_inits(con, sum, NULL);
+
+	mpf_set_ui(sum, 0); // sum already zero at this point, so just FYI
+
+	// first the constant sqrt part
+	mpf_sqrt_ui(con, 10005);
+	mpf_mul_ui(con, con, 426880);
+
+    for (i = 0;i < numThreads;i++) {
+        thread_parms[i].startk = (iterations / numThreads) * i;
+        thread_parms[i].endk = thread_parms[i].startk + ((iterations / numThreads) - 1UL);
+
+        mpf_init(thread_parms[i].result);
+        mpf_set_ui(thread_parms[i].result, 0);
+
+        pthread_create(&tids[i], NULL, chudnovsky_thread, (void *)&thread_parms[i]);
+    }
+
+    for (i = 0;i < numThreads;i++) {
+        pthread_join(tids[i], NULL);
+
+        // add on to sum
+        mpf_add(sum, sum, thread_parms[i].result);
+        mpf_clear(thread_parms[i].result);
+    }
+
+    free(thread_parms);
 
 	// final calculations (solve for pi)
 	mpf_ui_div(sum, 1, sum); // invert result
@@ -154,8 +215,7 @@ char * chudnovsky(uint64_t digits) {
 	output = mpf_get_str(NULL, &exp, 10, digits, sum); // calls malloc()
 
 	// free GMP variables
-	mpf_clears(result, con, A, B, F, sum, NULL);
-	mpz_clears(a, b, c, d, e, NULL);
+	mpf_clears(con, sum, NULL);
 
 	return output;
 }
