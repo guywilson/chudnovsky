@@ -48,12 +48,15 @@
 #include <string.h>
 #include <stdint.h>
 #include <gmp.h>
+#include <pthread.h>
+
+#define NUM_CORES                4
 
 // how many to display if the user doesn't specify:
-#define DEFAULT_DIGITS 60
+#define DEFAULT_DIGITS          60
 
 // how many decimal digits the algorithm generates per iteration:
-#define DIGITS_PER_ITERATION 14.1816474627254776555
+#define DIGITS_PER_ITERATION    14.1816474627254776555
 
 /**
  * Compute pi to the specified number of decimal digits using the
