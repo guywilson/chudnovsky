@@ -47,11 +47,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 #include <gmp.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define NUM_CORES                       4UL
 #define THREAD_ITERATION_THESHOLD       1000
+#define THREAD_SLEEP_CYCLES             10
 
 // how many to display if the user doesn't specify:
 #define DEFAULT_DIGITS                  60
@@ -68,6 +71,7 @@ typedef struct {
 thread_parms_t;
 
 void * chudnovsky_thread(void * p) {
+    int                 i;
     mpf_t               A;
     mpf_t               B;
     mpf_t               F;
@@ -89,7 +93,15 @@ void * chudnovsky_thread(void * p) {
 
     printf("Starting thread, startk = %llu, endk = %llu\n", parms->startk, parms->endk);
 
+    i = 0;
+
 	for (k = parms->startk; k < parms->endk; k++) {
+        if (i == THREAD_SLEEP_CYCLES) {
+            i = 0;
+
+            usleep(100U);
+        }
+
 		threek = 3 * k;
         sixk = threek << 1;
 
@@ -124,6 +136,8 @@ void * chudnovsky_thread(void * p) {
 
 		// add on to sum
 		mpf_add(parms->result, parms->result, F);
+
+        i++;
 	}
 
 	// free GMP variables
@@ -142,13 +156,14 @@ void * chudnovsky_thread(void * p) {
  * NOTE: this function returns a malloc()'d string!
  *
  * @param digits number of decimal digits to compute
+ * @param numCores number of cpu cores to run on
  *
  * @return a malloc'd string result (with no decimal marker)
  */
-char * chudnovsky(uint64_t digits) {
+static char * chudnovsky(uint64_t digits, int numCores) {
     int                 i;
-    int                 numThreads = NUM_CORES;
-    pthread_t           tids[NUM_CORES];
+    int                 numThreads = numCores;
+    pthread_t *         tids;
     mpf_t               con;
     mpf_t               sum;
 	mp_exp_t            exp;
@@ -168,6 +183,13 @@ char * chudnovsky(uint64_t digits) {
 
     if (thread_parms == NULL) {
         fprintf(stderr, "Failed to allocate memory for thread paramaters\n");
+        exit(-1);
+    }
+
+    tids = (pthread_t *)malloc(sizeof(pthread_t) * numThreads);
+
+    if (tids == NULL) {
+        fprintf(stderr, "Failed to allocate memory for thread IDs\n");
         exit(-1);
     }
 
@@ -206,6 +228,7 @@ char * chudnovsky(uint64_t digits) {
     }
 
     free(thread_parms);
+    free(tids);
 
 	// final calculations (solve for pi)
 	mpf_ui_div(sum, 1, sum); // invert result
@@ -223,10 +246,14 @@ char * chudnovsky(uint64_t digits) {
 /**
  * Print a usage message and exit
  */
-void usage_exit(void)
-{
-	fprintf(stderr, "usage: chudnovsky [digits]\n");
-	exit(1);
+static void printUsage(void) {
+	printf("\n Usage: chudnovsky [OPTIONS]\n\n");
+	printf("  Options:\n");
+	printf("   -h/?                 Print this help\n");
+	printf("   -digits num_digits   Number of pi digits to compute\n");
+	printf("   -cores num_cores     How many cores to run on\n");
+	printf("   -f output_file       The output file\n");
+	printf("\n");
 }
 
 /**
@@ -234,36 +261,70 @@ void usage_exit(void)
  *
  * See usage_exit() for usage.
  */
-int main(int argc, char **argv)
-{
-	char *      pi;
-    char *      endptr;
-	long        digits = 0L;
+int main(int argc, char **argv) {
+    int             i;
+    int             numCores = NUM_CORES;
+	char *          pi;
+    char *          endptr;
+    char *          pszOutputFile;
+	long            digits = DEFAULT_DIGITS;
+    FILE *          fptrOut;
 
-	switch (argc) {
-		case 1:
-			digits = DEFAULT_DIGITS;
-			break;
+	if (argc > 1) {
+		for (i = 1;i < argc;i++) {
+			if (argv[i][0] == '-') {
+				if (strncmp(&argv[i][1], "digits", 6) == 0) {
+                    digits = strtol(&argv[++i][0], &endptr, 10);
 
-		case 2:
-			digits = strtol(argv[1], &endptr, 10);
-			if (*endptr != '\0') { usage_exit(); }
-			break;
-
-		default:
-			usage_exit();
+                    if (*endptr != '\0') { 
+                        printUsage();
+                        return -1;
+                    }
+				}
+				else if (strncmp(&argv[i][1], "cores", 5) == 0) {
+					numCores = atoi(&argv[++i][0]);
+				}
+				else if (strncmp(&argv[i][1], "f", 1) == 0) {
+					pszOutputFile = strdup(&argv[++i][0]);
+				}
+				else if (argv[i][1] == 'h' || argv[i][1] == '?') {
+					printUsage();
+                    return 0;
+				}
+				else {
+					printf("Unknown argument '%s'", &argv[i][0]);
+					printUsage();
+                    return -1;
+				}
+			}
+		}
+	}
+	else {
+		printUsage();
+        return -1;
 	}
 
 	if (digits < 1) { 
-        usage_exit();
+        printUsage();
+        return -1;
     }
 
-	pi = chudnovsky(digits);
+	pi = chudnovsky(digits, numCores);
+
+    fptrOut = fopen(pszOutputFile, "wt");
+
+    if (fptrOut == NULL) {
+        fprintf(stderr, "Could not open output file '%s': %s\n", pszOutputFile, strerror(errno));
+        free(pi);
+        return -1;
+    }
 
 	// since there's no decimal point in the result, we'll print the
 	// first digit, then the rest of it, with the expectation that the
 	// decimal will appear after "3", as per usual:
-	printf("%.1s.%s\n", pi, pi+1);
+	fprintf(fptrOut, "%.1s.%s\n", pi, pi + 1);
+
+    fclose(fptrOut);
 
 	// chudnovsky() malloc()s the result string, so let's be proper:
 	free(pi);
