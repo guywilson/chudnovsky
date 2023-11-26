@@ -46,6 +46,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <gmp.h>
 
 // how many to display if the user doesn't specify:
@@ -66,22 +67,31 @@
  *
  * @return a malloc'd string result (with no decimal marker)
  */
-char *chudnovsky(unsigned long digits)
-{
-	mpf_t result, con, A, B, F, sum;
-	mpz_t a, b, c, d, e;
-	char *output;
-	mp_exp_t exp;
-	double bits_per_digit;
-
-	unsigned long int k, threek;
-	unsigned long iterations = (digits/DIGITS_PER_ITERATION)+1;
-	unsigned long precision_bits;
+char * chudnovsky(uint64_t digits) {
+	mpf_t       result;
+    mpf_t       con;
+    mpf_t       A;
+    mpf_t       B;
+    mpf_t       F;
+    mpf_t       sum;
+	mpz_t       a;
+    mpz_t       b;
+    mpz_t       c;
+    mpz_t       d;
+    mpz_t       e;
+	mp_exp_t    exp;
+	uint64_t    k;
+    uint64_t    threek;
+    uint64_t    sixk;
+	uint64_t    iterations = (digits / (uint64_t)DIGITS_PER_ITERATION) + 1UL;
+	uint64_t    precision_bits;
+	char *      output;
+	double      bits_per_digit;
 
 	// roughly compute how many bits of precision we need for
 	// this many digit:
 	bits_per_digit = 3.32192809488736234789; // log2(10)
-	precision_bits = (digits * bits_per_digit) + 1;
+	precision_bits = (digits * bits_per_digit) + 1UL;
 
 	mpf_set_default_prec(precision_bits);
 
@@ -97,9 +107,10 @@ char *chudnovsky(unsigned long digits)
 
 	// now the fun bit
 	for (k = 0; k < iterations; k++) {
-		threek = 3*k;
+		threek = 3 * k;
+        sixk = threek << 1;
 
-		mpz_fac_ui(a, 6*k);  // (6k)!
+		mpz_fac_ui(a, sixk);  // (6k)!
 
 		mpz_set_ui(b, 545140134); // 13591409 + 545140134k
 		mpz_mul_ui(b, b, k);
@@ -111,7 +122,10 @@ char *chudnovsky(unsigned long digits)
 		mpz_pow_ui(d, d, 3);
 
 		mpz_ui_pow_ui(e, 640320, threek); // -640320^(3k)
-		if ((threek&1) == 1) { mpz_neg(e, e); }
+		
+        if ((threek & 1) == 1) { 
+            mpz_neg(e, e);
+        }
 
 		// numerator (in A)
 		mpz_mul(a, a, b);
@@ -159,8 +173,9 @@ void usage_exit(void)
  */
 int main(int argc, char **argv)
 {
-	char *pi, *endptr;
-	long digits;
+	char *      pi;
+    char *      endptr;
+	long        digits = 0L;
 
 	switch (argc) {
 		case 1:
@@ -176,7 +191,9 @@ int main(int argc, char **argv)
 			usage_exit();
 	}
 
-	if (digits < 1) { usage_exit(); }
+	if (digits < 1) { 
+        usage_exit();
+    }
 
 	pi = chudnovsky(digits);
 

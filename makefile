@@ -1,8 +1,8 @@
 ###############################################################################
 #                                                                             #
-# MAKEFILE for xword                                                          #
+# MAKEFILE for chudnovsky                                                     #
 #                                                                             #
-# (c) Guy Wilson 2021                                                         #
+# (c) Guy Wilson 2023                                                         #
 #                                                                             #
 ###############################################################################
 
@@ -15,22 +15,22 @@ DEP = dep
 TARGET = chudnovsky
 
 # Tools
-C = gcc-11
-LINKER = gcc-11
+C = gcc
+LINKER = gcc
 
 # postcompile step
 PRECOMPILE = @ mkdir -p $(BUILD) $(DEP)
 # postcompile step
 POSTCOMPILE = @ mv -f $(DEP)/$*.Td $(DEP)/$*.d
 
-CFLAGS = -c -O2 -Wall -pedantic
+CFLAGS = -c -O2 -Wall -pedantic -I /opt/homebrew/include
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEP)/$*.Td
 
 # Libraries
-STDLIBS = -lgmp
-
-COMPILE.c = $(C) $(CFLAGS) -I/usr/local/MacGPG2/include $(DEPFLAGS) -o $@
-LINK.o = $(LINKER) -L/usr/local/MacGPG2/lib $(STDLIBS) -o $@
+STDLIBS = -pthread
+EXTLIBS = -lgmp
+COMPILE.c = $(C) $(CFLAGS) $(DEPFLAGS) -o $@
+LINK.o = $(LINKER) -L /opt/homebrew/lib $(STDLIBS) -o $@
 
 CSRCFILES = $(wildcard $(SOURCE)/*.c)
 OBJFILES = $(patsubst $(SOURCE)/%.c, $(BUILD)/%.o, $(CSRCFILES))
