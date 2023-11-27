@@ -55,6 +55,8 @@
 #define NUM_CORES                       4UL
 #define THREAD_ITERATION_THESHOLD       1000
 #define THREAD_SLEEP_CYCLES             10
+#define THREAD_ITERATION_DIV_2_THREAD   0.66f
+#define THREAD_ITERATION_DIV_N_THREAD   0.5f
 
 // how many to display if the user doesn't specify:
 #define DEFAULT_DIGITS                  60
@@ -300,7 +302,7 @@ static char * chudnovsky(uint64_t digits, int numCores) {
         }
         else if (numThreads == 2) {
             thread_parms[0].startk = 0UL;
-            thread_parms[0].endk = (uint64_t)((float)iterations * 0.66f);
+            thread_parms[0].endk = (uint64_t)((float)iterations * THREAD_ITERATION_DIV_2_THREAD);
             thread_parms[1].startk = thread_parms[0].endk + 1UL;
             thread_parms[1].endk = iterations - 1UL;
         }
@@ -316,7 +318,7 @@ static char * chudnovsky(uint64_t digits, int numCores) {
             else {
                 thread_parms[i].endk = 
                     startCounter + 
-                    (uint64_t)(((float)iterations - (float)startCounter) * 0.5f) - 1UL;
+                    (uint64_t)(((float)iterations - (float)startCounter) * THREAD_ITERATION_DIV_N_THREAD) - 1UL;
             }
 
             startCounter = thread_parms[i].endk + 1UL;
