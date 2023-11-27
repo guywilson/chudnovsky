@@ -1,4 +1,5 @@
 /build
 /dep
 chudnovsky
-pi.txt
+*.txt
+

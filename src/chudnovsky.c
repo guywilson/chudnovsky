@@ -60,7 +60,7 @@
 #define DEFAULT_DIGITS                  60
 
 // how many decimal digits the algorithm generates per iteration:
-#define DIGITS_PER_ITERATION            14.1816474627254776555
+#define DIGITS_PER_ITERATION            14.1816474627254776555f
 
 typedef struct {
     uint64_t        startk;
@@ -69,6 +69,70 @@ typedef struct {
     mpf_t           result;
 }
 thread_parms_t;
+
+// static void test(int numThreads, uint64_t digits) {
+//     int                 i;
+//     uint64_t            iterations;
+//     uint64_t            startCounter = 0UL;
+//     thread_parms_t *    thread_parms;
+
+//     iterations = (uint64_t)((double)digits / (double)DIGITS_PER_ITERATION) + 1UL;
+
+//     /*
+//     ** Add 10%...
+//     */
+//     iterations += (iterations / 10);
+
+//     printf("Num iterations = %llu\n", iterations);
+
+//     thread_parms = (thread_parms_t *)malloc(sizeof(thread_parms_t) * numThreads);
+
+//     if (thread_parms == NULL) {
+//         fprintf(stderr, "Failed to allocate memory for thread paramaters\n");
+//         exit(-1);
+//     }
+
+//     /*
+//     ** Iterations are split by thread, the first thread gets
+//     ** 50% of the load (where k is relatively small), 66% when 
+//     ** we have just 2 threads, then each subsequent thread gets 
+//     ** 50% of the remainder, with the final thread getting the 
+//     ** remainder...
+//     */
+//     for (i = 0;i < numThreads;i++) {
+//         if (numThreads == 1) {
+//             thread_parms[i].startk = 0;
+//             thread_parms[i].endk = iterations - 1UL;
+//         }
+//         else if (numThreads == 2) {
+//             thread_parms[0].startk = 0UL;
+//             thread_parms[0].endk = (uint64_t)((float)iterations * 0.66f);
+//             thread_parms[1].startk = thread_parms[0].endk + 1UL;
+//             thread_parms[1].endk = iterations - 1UL;
+//         }
+//         else {
+//             thread_parms[i].startk = startCounter;
+
+//             if (i == (numThreads - 1)) {
+//                 /*
+//                 ** Last thread...
+//                 */
+//                 thread_parms[i].endk = iterations - 1UL;
+//             }
+//             else {
+//                 thread_parms[i].endk = 
+//                     startCounter + 
+//                     (uint64_t)(((float)iterations - (float)startCounter) * 0.5f) - 1UL;
+//             }
+
+//             startCounter = thread_parms[i].endk + 1UL;
+//         }
+
+//         printf("Starting thread, startk = %llu, endk = %llu\n", thread_parms[i].startk, thread_parms[i].endk);
+//     }
+
+//     free(thread_parms);
+// }
 
 void * chudnovsky_thread(void * p) {
     int                 i;
@@ -90,8 +154,6 @@ void * chudnovsky_thread(void * p) {
 	// allocate GMP variables
 	mpf_inits(A, B, F, NULL);
 	mpz_inits(a, b, c, d, e, NULL);
-
-    printf("Starting thread, startk = %llu, endk = %llu\n", parms->startk, parms->endk);
 
     i = 0;
 
@@ -167,13 +229,28 @@ static char * chudnovsky(uint64_t digits, int numCores) {
     mpf_t               con;
     mpf_t               sum;
 	mp_exp_t            exp;
-	uint64_t            iterations = (digits / (uint64_t)DIGITS_PER_ITERATION) + 1UL;
+	uint64_t            iterations;
+    uint64_t            startCounter = 0;
 	uint64_t            precision_bits;
 	char *              output;
 	double              bits_per_digit;
     thread_parms_t *    thread_parms;
 
+    iterations = (uint64_t)((double)digits / (double)DIGITS_PER_ITERATION) + 1UL;
+
+    /*
+    ** Add 10%...
+    */
+    iterations += (iterations / 10);
+
     printf("Num iterations = %llu\n", iterations);
+
+    /*
+    ** If we've got an odd number of threads, scale up to an even number...
+    */
+    if ((numThreads % 2) == 1) {
+        numThreads++;
+    }
 
     if (iterations < THREAD_ITERATION_THESHOLD) {
         numThreads = 1;
@@ -209,9 +286,43 @@ static char * chudnovsky(uint64_t digits, int numCores) {
 	mpf_sqrt_ui(con, 10005);
 	mpf_mul_ui(con, con, 426880);
 
+    /*
+    ** Iterations are split by thread, the first thread gets
+    ** 50% of the load (where k is relatively small), 66% when 
+    ** we have just 2 threads, then each subsequent thread gets 
+    ** 50% of the remainder, with the final thread getting the 
+    ** remainder...
+    */
     for (i = 0;i < numThreads;i++) {
-        thread_parms[i].startk = (iterations / numThreads) * i;
-        thread_parms[i].endk = thread_parms[i].startk + ((iterations / numThreads) - 1UL);
+        if (numThreads == 1) {
+            thread_parms[i].startk = 0;
+            thread_parms[i].endk = iterations - 1UL;
+        }
+        else if (numThreads == 2) {
+            thread_parms[0].startk = 0UL;
+            thread_parms[0].endk = (uint64_t)((float)iterations * 0.66f);
+            thread_parms[1].startk = thread_parms[0].endk + 1UL;
+            thread_parms[1].endk = iterations - 1UL;
+        }
+        else {
+            thread_parms[i].startk = startCounter;
+
+            if (i == (numThreads - 1)) {
+                /*
+                ** Last thread...
+                */
+                thread_parms[i].endk = iterations - 1UL;
+            }
+            else {
+                thread_parms[i].endk = 
+                    startCounter + 
+                    (uint64_t)(((float)iterations - (float)startCounter) * 0.5f) - 1UL;
+            }
+
+            startCounter = thread_parms[i].endk + 1UL;
+        }
+
+        printf("Starting thread, startk = %llu, endk = %llu\n", thread_parms[i].startk, thread_parms[i].endk);
 
         mpf_init(thread_parms[i].result);
         mpf_set_ui(thread_parms[i].result, 0);
@@ -291,6 +402,10 @@ int main(int argc, char **argv) {
 					printUsage();
                     return 0;
 				}
+				// else if (strncmp(&argv[i][1], "test", 4) == 0) {
+				// 	test(numCores, digits);
+                //     return -1;
+				// }
 				else {
 					printf("Unknown argument '%s'", &argv[i][0]);
 					printUsage();
