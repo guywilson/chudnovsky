@@ -926,7 +926,7 @@ int main(int argc, char *argv[]) {
     if (fptrTmp != NULL) {
         /* output Pi and timing statistics */
         printf("pi[0..%lld]\n", terms);
-        mpf_out_str(fptrTmp, 10, digits + 2, qi);
+        mpf_out_str(fptrTmp, 10, digits, qi);
         fclose(fptrTmp);
 
         error = 0;
