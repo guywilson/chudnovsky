@@ -27,8 +27,8 @@ CFLAGS = -c -O2 -Wall -pedantic -I /opt/homebrew/include
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEP)/$*.Td
 
 # Libraries
-STDLIBS = -pthread
-EXTLIBS = -lgmp
+STDLIBS =
+EXTLIBS = -lgmp -lm
 COMPILE.c = $(C) $(CFLAGS) $(DEPFLAGS) -o $@
 LINK.o = $(LINKER) -L /opt/homebrew/lib $(STDLIBS) -o $@
 

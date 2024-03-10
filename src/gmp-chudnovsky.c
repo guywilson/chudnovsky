@@ -883,17 +883,23 @@ int main(int argc, char *argv[]) {
     
     printf("time = %6.3f\n", (double)(mid3 - mid2) / 1000.0);
 
-    printf("sqrt    ");  fflush(stdout);
+    printf("sqrt    ");
+    fflush(stdout);
+    
     my_sqrt_ui(pi, C);
+    
     mid4 = cputime();
-    printf("time = %6.3f\n", (double)(mid4-mid3)/1000);
+    printf("time = %6.3f\n", (double)(mid4 - mid3) / 1000.0);
 
-    printf("mul     ");  fflush(stdout);
+    printf("mul     ");
+    fflush(stdout);
+    
     mpf_mul(qi, qi, pi);
+    
     end = cputime();
-    printf("time = %6.3f\n", (double)(end-mid4)/1000);
+    printf("time = %6.3f\n", (double)(end - mid4) / 1000.0f);
 
-    printf("total   time = %6.3f\n", (double)(end-begin)/1000);
+    printf("total   time = %6.3f\n", (double)(end - begin) / 1000.0f);
     fflush(stdout);
 
     printf(
