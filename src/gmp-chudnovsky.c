@@ -893,9 +893,9 @@ int main(int argc, char *argv[]) {
     printf(
         "   P size = %llu digits (%f)\n   Q size = %llu digits (%f)\n",
         psize, 
-        (double)psize / digits, 
+        (double)psize / (double)digits, 
         qsize, 
-        (double)qsize / digits);
+        (double)qsize / (double)digits);
 
     fptrOut = fopen(pszOutputFile, "wt");
 
@@ -906,7 +906,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* output Pi and timing statistics */
-    printf("pi(0, %lld)\n", terms);
+    printf("pi[0..%lld]\n", terms);
     mpf_out_str(fptrOut, 10, digits + 2, qi);
 
     fclose(fptrOut);
