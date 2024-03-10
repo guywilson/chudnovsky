@@ -30,6 +30,7 @@
 #include <math.h>
 #include <time.h>
 #include <errno.h>
+#include <unistd.h>
 #include "gmp.h"
 
 #define A                   13591409
@@ -684,8 +685,10 @@ static void printUsage(void) {
 int main(int argc, char *argv[]) {
     char *          endptr;
     char *          pszOutputFile;
+    char            szTmpFile[32];
 	uint64_t        digits = DEFAULT_DIGITS;
     FILE *          fptrOut;
+    FILE *          fptrTmp;
     mpf_t           pi;
     mpf_t           qi;
     int64_t         i;
@@ -700,6 +703,9 @@ int main(int argc, char *argv[]) {
     int64_t         mid3;
     int64_t         mid4;
     int64_t         end;
+    int             error = 0;
+    int             tmpFd;
+    int             ch;
 
     prog_name = argv[0];
 
@@ -897,19 +903,32 @@ int main(int argc, char *argv[]) {
         qsize, 
         (double)qsize / (double)digits);
 
-    fptrOut = fopen(pszOutputFile, "wt");
+    strcpy(szTmpFile, "./pi_temp_XXXXXX");
 
-    if (fptrOut == NULL) {
-        fprintf(stderr, "Could not open output file '%s': %s\n", pszOutputFile, strerror(errno));
-        mpf_clear(qi);
+    /*
+    ** Create and open a temporary file...
+    */
+    tmpFd = mkstemp(szTmpFile);
+
+    if (tmpFd < 0) {
+        fprintf(stderr, "Could not create & open temporary file: %s\n", strerror(errno));
         return -1;
     }
 
-    /* output Pi and timing statistics */
-    printf("pi[0..%lld]\n", terms);
-    mpf_out_str(fptrOut, 10, digits + 2, qi);
+    fptrTmp = fdopen(tmpFd, "w");
 
-    fclose(fptrOut);
+    if (fptrTmp != NULL) {
+        /* output Pi and timing statistics */
+        printf("pi[0..%lld]\n", terms);
+        mpf_out_str(fptrTmp, 10, digits + 2, qi);
+        fclose(fptrTmp);
+
+        error = 0;
+    }
+    else {
+        fprintf(stderr, "Could not open temporary file for writing: %s\n", strerror(errno));
+        error = -1;
+    }
 
     /* free float resources */
     mpf_clear(pi);
@@ -918,5 +937,44 @@ int main(int argc, char *argv[]) {
     mpf_clear(t1);
     mpf_clear(t2);
 
-    return 0;
+    if (error == 0) {
+        fptrTmp = fopen(szTmpFile, "rt");
+
+        if (fptrTmp == NULL) {
+            fprintf(stderr, "Could not open temporary file for reading '%s': %s\n", szTmpFile, strerror(errno));
+            return -1;
+        }
+
+        fptrOut = fopen(pszOutputFile, "wt");
+
+        if (fptrOut == NULL) {
+            fprintf(stderr, "Could not open output file '%s': %s\n", pszOutputFile, strerror(errno));
+            fclose(fptrTmp);
+            return -1;
+        }
+
+        fputs("3.", fptrOut);
+
+        fseek(fptrTmp, 3, SEEK_SET);
+
+        while (!feof(fptrTmp)) {
+            ch = fgetc(fptrTmp);
+
+            if (ch == 'e') {
+                break;
+            }
+
+            fputc(ch, fptrOut);
+        }
+
+        fclose(fptrOut);
+        fclose(fptrTmp);
+
+        /*
+        ** Delete the temporary file...
+        */
+        unlink(szTmpFile);
+    }
+
+    return error;
 }
